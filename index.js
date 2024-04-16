@@ -1,93 +1,64 @@
 const config = require("./config.json");
-const { Select , Toggle} = require("enquirer");
-const cloudflare = require("cloudflare");
 const process = require("process");
 process.removeAllListeners("warning");
-const Mainprompt = new Select({
-  name: "Main Menu",
-  message: "Choose a menu item",
-  choices: [
-    {
-      message: "1 - View DNS Entries",
-      name: "1",
-      value: "1",
-    },
-    {
-      message: "2 - Test Credentials",
-      name: "2",
-      value: "2",
-    },
-    {
-      message: "3 - Run Cleanup",
-      name: "3",
-      value: "3",
-    },
-    {
-      message: "4 - Exit",
-      name: "4",
-      value: "4",
-    },
-  ],
-});
-const Continueprompt = new Toggle({
-    message: "Return to main menu?",
-    enabled: "Y",
-    disabled: "N"
-})
-var cf = new cloudflare({
-  token: config.api_token,
-});
-
-function ViewDns() {
-  console.info("View Function Not implememnted");
-  ShowStartMenu();
-  return;
-}
-
-function TestCreds() {
-  cf.console.info("Test Function Not implememnted");
-  ShowStartMenu();
-  return;
-}
-
-function RunCleaning() {
-  console.info("Cleanup Function Not implememnted");
-  ShowStartMenu();
-  return;
-}
-
-function Exit() {
-  console.info("Application now exiting");
-  process.exit(0);
-  return;
-}
-
-
-function ContinueRouter(answer) {
-    
-}
-
-function MenuRouter(answer) {
-  //console.log(parseInt(answer));
-  switch (parseInt(answer)) {
-    case 1:
-      ViewDns();
-      break;
-    case 2:
-      TestCreds();
-      break;
-    case 3:
-      RunCleaning();
-      break;
-    case 4:
-      Exit();
-      break;
+const prompt = require("prompt-sync")();
+const { default: Cloudflare } = require("cloudflare");
+const axios = require('axios')
+const records = []
+const ignored = config.ignore_list
+class  Record {
+  constructor(id,name,content,type,status,prune){
+      this.id = id
+      this.name = name
+      this.content = content
+      this.type = type
+      this.status = status
+      this.prune = prune
   }
 }
+const cloudflare = new Cloudflare({
+  apiEmail: config.api_email,
+  apiKey: config.api_key,
+});
+var zone = config.zone;
 
-function ShowStartMenu() {
-    console.clear()
-  Mainprompt.run().then((answer) => MenuRouter(answer));
+console.log("Cloudflare Stale DNS Checker");
+console.log("Written by Walker Dick");
+
+if (zone == "" || zone == undefined) {
+  console.log(
+    "Zone config is not set.\n Please set the `zone` parameter in config.json"
+  );
 }
-//console.clear()
-ShowStartMenu();
+
+cloudflare.dns.records.list({
+  zone_id: zone,
+  type: "CNAME"
+}).then(async data => {
+  console.log(data.result[0].zone_name)
+  for (result in data.result ) {
+    //console.log(data.result[result])
+    records.push(new Record(data.result[result].id,data.result[result].name,data.result[result].content,data.result[result].type,0,false))
+    console.log(`ID: ${data.result[result].id} -- Name: ${data.result[result].name} -- Content: ${data.result[result].content} -- Type: ${data.result[result].type}`)
+    
+  }
+  console.log(`All records Processed. Total records: ${records.length}`)
+
+  console.log("\n")
+
+  console.log('Starting Site Tests')
+  for (req in records){
+    if (ignored.includes(`https://${records[req].name}`) == false){
+    await axios.get(`https://${records[req].name}`).then((resp)=>{
+      console.log(`https://${records[req].name} - ${resp.status}`)
+    }).catch((error)=>{
+      console.error(error)
+      
+      //console.error(`https://${records[req].name} - ${error.errno}`)
+    })
+  } else {
+    console.log(`https://${records[req].name} - skipped`)
+  }
+} 
+
+});
